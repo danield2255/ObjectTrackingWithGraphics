@@ -14,10 +14,16 @@ from tensorflow.python.saved_model import tag_constants
 from core.config import cfg
 from PIL import Image
 import cv2
+import imutils
+import math
+from scipy import ndimage
+from collections import deque
+import collections
 import numpy as np
 import matplotlib.pyplot as plt
 from tensorflow.compat.v1 import ConfigProto
 from tensorflow.compat.v1 import InteractiveSession
+
 # deep sort imports
 from deep_sort import preprocessing, nn_matching
 from deep_sort.detection import Detection
@@ -37,6 +43,34 @@ flags.DEFINE_float('score', 0.50, 'score threshold')
 flags.DEFINE_boolean('dont_show', False, 'dont show video output')
 flags.DEFINE_boolean('info', False, 'show detailed info of tracked objects')
 flags.DEFINE_boolean('count', False, 'count objects being tracked on screen')
+
+def imageOverlay(image, overlay, pos, angle, scale=1):
+    overlay = cv2.resize(overlay, (0, 0), fx=scale, fy=scale)
+    overlay = ndimage.rotate(overlay, angle)
+    h, w, _ = overlay.shape  # Size of foreground
+    rows, cols, _ = image.shape  # Size of background Image
+    y, x = pos[0], pos[1]  # Position of foreground/overlay image
+    # loop over all pixels and apply the blending equation
+    for i in range(h):
+        for j in range(w):
+            if x + i >= rows or y + j >= cols:
+                continue
+            alpha = float(overlay[i][j][3] / 255.0)# read the alpha channel
+
+            if alpha != 0:
+                #Put the color we want
+                image[x + i - int(w//2)][y + j - int(h//2)] = (0, 225, 55)
+            
+    return image
+
+def bbox2points(bbox):
+    """    From bounding box yolo format    to corner points cv2 rectangle    """
+    x, y, w, h = bbox    
+    xmin = int(round(x - (w / 2)))    
+    xmax = int(round(x + (w / 2)))    
+    ymin = int(round(y - (h / 2)))    
+    ymax = int(round(y + (h / 2)))    
+    return xmin, ymin, xmax, ymax
 
 def main(_argv):
     # Definition of the parameters
@@ -92,8 +126,31 @@ def main(_argv):
 
     frame_num = 0
     # while video is running
+
+
+
+    #SET THE BUFFER OF POINTS
+    buffer = 32
+    #pts = deque(maxlen=buffer)
+    counter = 0
+    (dX, dY) = (0, 0)
+    direction = ""
+    #INITIALIZE TRACKED CENTERS
+    tracked_centers = {}
+    arrow = cv2.imread("yellow_arrow.png", -1)
+    discolor = (0,0,0)
+    red = (255, 0, 0)
+    yellow = (255,255,0)
+    green = (0,255,0) 
+    distdict={}
+
     while True:
         return_value, frame = vid.read()
+        try:
+          pass
+            #gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        except:
+            pass
         if return_value:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image = Image.fromarray(frame)
@@ -157,10 +214,10 @@ def main(_argv):
         class_names = utils.read_class_names(cfg.YOLO.CLASSES)
 
         # by default allow all classes in .names file
-        allowed_classes = list(class_names.values())
+        #allowed_classes = list(class_names.values())
         
         # custom allowed classes (uncomment line below to customize tracker for only people)
-        #allowed_classes = ['person']
+        allowed_classes = ['person', 'car']
 
         # loop through objects and use class index to get class name, allow only classes in allowed_classes list
         names = []
@@ -200,24 +257,118 @@ def main(_argv):
         tracker.predict()
         tracker.update(detections)
 
+        
+
         # update tracks
+        cur_view_objs = 0
+        cur_distances = {}
         for track in tracker.tracks:
             if not track.is_confirmed() or track.time_since_update > 1:
                 continue 
             bbox = track.to_tlbr()
             class_name = track.get_class()
+            cur_view_objs += 1
             
-        # draw bbox on screen
+            # draw bbox on screen
             color = colors[int(track.track_id) % len(colors)]
             color = [i * 255 for i in color]
             cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
             cv2.rectangle(frame, (int(bbox[0]), int(bbox[1]-30)), (int(bbox[0])+(len(class_name)+len(str(track.track_id)))*17, int(bbox[1])), color, -1)
             cv2.putText(frame, class_name + "-" + str(track.track_id),(int(bbox[0]), int(bbox[1]-10)),0, 0.75, (255,255,255),2)
 
+            #Calculate distance from the camera
+            left, top, right, bottom = bbox2points(bbox)
+            
+            focal = 351.0
+            height = 1.7
+            dis = height*focal/(-top+bottom)
+
+
+            if dis <=2.5:
+                discolor = red
+            elif dis >2.5 and dis < 3.0:
+                discolor = yellow
+            else:
+                discolor = green
+            
+            #Update the history of distances
+            label = track.track_id
+            if label in distdict.keys():
+                distdict[label].extend([dis,left])
+            else:
+                distdict[label] = [dis,left]
+
+            #Add the dictionary of distances in the current frame
+            cur_distances[track.track_id] = (dis, discolor)
+
+
+
+            #GET CENTER OF RECTANGLE
+            center = ((int(bbox[0]) + int(bbox[2])) // 2, (int(bbox[1]) + int(bbox[3])) // 2)
+
+            #check if the tracked object's id exists
+            #if it doesn't, create a dictionary with points, dx, dy, direction
+            if track.track_id not in tracked_centers.keys():
+                tracked_centers[track.track_id] = {'points':deque(maxlen=buffer), 'dX':0, 'dY':0, 'direction':""}
+            tracked_centers[track.track_id]['points'].appendleft(center)
+            cv2.circle(frame, center, 5, (0, 0, 255), -1)
+            pts = tracked_centers[track.track_id]['points']
+            for i in np.arange(1, len(pts)):
+                if len(pts) < 10:
+                  break
+                # if either of the tracked points are None, ignore
+                # them
+                if pts[i - 1] is None or pts[i] is None:
+                    continue
+                # check to see if enough points have been accumulated in
+                # the buffer
+                if counter >= 10 and i == 1 and pts[-10] is not None:
+                    # compute the difference between the x and y
+                    # coordinates and re-initialize the direction
+                    # text variables
+                    tracked_centers[track.track_id]['dX'] = pts[-10][0] - pts[i][0]
+                    tracked_centers[track.track_id]['dY'] = pts[-10][1] - pts[i][1]
+                    (dirX, dirY) = ("", "")
+                    # ensure there is significant movement in the
+                    # x-direction
+                    if np.abs(tracked_centers[track.track_id]['dX']) > 20:
+                        dirX = "East" if np.sign(tracked_centers[track.track_id]['dX']) == 1 else "West"
+                    # ensure there is significant movement in the
+                    # y-direction
+                    if np.abs(tracked_centers[track.track_id]['dY']) > 20:
+                        dirY = "North" if np.sign(tracked_centers[track.track_id]['dY']) == 1 else "South"
+                    # handle when both directions are non-empty
+                    if dirX != "" and dirY != "":
+                        tracked_centers[track.track_id]['direction'] = "{}-{}".format(dirY, dirX)
+                    # otherwise, only one direction is non-empty
+                    else:
+                        tracked_centers[track.track_id]['direction'] = dirX if dirX != "" else dirY
+            try:
+                angle = math.degrees(math.atan(tracked_centers[track.track_id]['dY'] / tracked_centers[track.track_id]['dX']))
+            except:
+                angle = math.degrees(math.atan(tracked_centers[track.track_id]['dY'] / 0.001))
+            if np.sign(tracked_centers[track.track_id]['dX']) == 1:
+                angle = angle + 180
+            imageOverlay(frame, arrow, center, angle)
+            #THIS WAS PRINTING THE GENERAL DIRECTION
+            #cv2.putText(frame, "id: {}, dir:{}".format(track.track_id, tracked_centers[track.track_id]['direction']), (10, 30* cur_view_objs), cv2.FONT_HERSHEY_SIMPLEX,
+            #    0.65, (0, 0, 255), 3)
+            
+            cv2.putText(frame, "id: {}, dx: {}, dy: {}".format(track.track_id, tracked_centers[track.track_id]['dX'], tracked_centers[track.track_id]['dY']),
+                (10, frame.shape[0] - (10 * cur_view_objs)), cv2.FONT_HERSHEY_SIMPLEX,
+                0.35, (0, 0, 255), 1)
+            
+            counter += 1
+        
         # if enable info flag then print details about each track
             if FLAGS.info:
                 print("Tracker ID: {}, Class: {},  BBox Coords (xmin, ymin, xmax, ymax): {}".format(str(track.track_id), class_name, (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))))
-
+        try:
+            closest_obj_id = min(cur_distances, key = lambda k: cur_distances[k][0])
+            cv2.putText(frame,f"Dist.: {round(cur_distances[closest_obj_id][0],2)}m",(50, 70),cv2.FONT_HERSHEY_SIMPLEX ,1,cur_distances[closest_obj_id][1],2,cv2.LINE_AA)
+        except:
+            print("NO OBJECT IN VIEW YET")
+    
         # calculate frames per second of running detections
         fps = 1.0 / (time.time() - start_time)
         print("FPS: %.2f" % fps)
