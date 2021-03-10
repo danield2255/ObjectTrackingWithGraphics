@@ -354,9 +354,9 @@ def main(_argv):
             #cv2.putText(frame, "id: {}, dir:{}".format(track.track_id, tracked_centers[track.track_id]['direction']), (10, 30* cur_view_objs), cv2.FONT_HERSHEY_SIMPLEX,
             #    0.65, (0, 0, 255), 3)
             
-            cv2.putText(frame, "id: {}, dx: {}, dy: {}".format(track.track_id, tracked_centers[track.track_id]['dX'], tracked_centers[track.track_id]['dY']),
-                (10, frame.shape[0] - (10 * cur_view_objs)), cv2.FONT_HERSHEY_SIMPLEX,
-                0.35, (0, 0, 255), 1)
+#             cv2.putText(frame, "id: {}, dx: {}, dy: {}".format(track.track_id, tracked_centers[track.track_id]['dX'], tracked_centers[track.track_id]['dY']),
+#                 (10, frame.shape[0] - (10 * cur_view_objs)), cv2.FONT_HERSHEY_SIMPLEX,
+#                 0.35, (0, 0, 255), 1)
             
             counter += 1
         
@@ -365,13 +365,14 @@ def main(_argv):
                 print("Tracker ID: {}, Class: {},  BBox Coords (xmin, ymin, xmax, ymax): {}".format(str(track.track_id), class_name, (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))))
         try:
             closest_obj_id = min(cur_distances, key = lambda k: cur_distances[k][0])
-            cv2.putText(frame,f"Dist.: {round(cur_distances[closest_obj_id][0],2)}m",(50, 70),cv2.FONT_HERSHEY_SIMPLEX ,1,cur_distances[closest_obj_id][1],2,cv2.LINE_AA)
+            cv2.putText(frame,f"Dist.: {round(cur_distances[closest_obj_id][0],2)}m",(30, 70),cv2.FONT_HERSHEY_SIMPLEX ,1,cur_distances[closest_obj_id][1],1,cv2.LINE_AA)
         except:
             print("NO OBJECT IN VIEW YET")
     
         # calculate frames per second of running detections
         fps = 1.0 / (time.time() - start_time)
         print("FPS: %.2f" % fps)
+        cv2.putText(frame,f"FPS: {int(fps)}",(30, 30),cv2.FONT_HERSHEY_SIMPLEX ,1,(0, 0, 255),1,cv2.LINE_AA)
         result = np.asarray(frame)
         result = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         
