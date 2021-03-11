@@ -50,18 +50,24 @@ def imageOverlay(image, overlay, pos, angle, scale=1):
     h, w, _ = overlay.shape  # Size of foreground
     rows, cols, _ = image.shape  # Size of background Image
     y, x = pos[0], pos[1]  # Position of foreground/overlay image
-    # loop over all pixels and apply the blending equation
-    for i in range(h):
-        for j in range(w):
-            if x + i >= rows or y + j >= cols:
-                continue
-            alpha = float(overlay[i][j][3] / 255.0)# read the alpha channel
+    # loop over all pixels of the overlay and apply the blending equation
+    alpha = overlay[:, :, 3]/255.0
 
-            if alpha != 0:
-                #Put the color we want
-                image[x + i - int(w//2)][y + j - int(h//2)] = (0, 225, 55)
+    shape_mat = alpha.shape
+    #lets say alpha shape is (100, 100)
+    indices = np.where(alpha != 0)
+
+
+    def graphic_blending(overlay_x, overlay_y):
+        if x >= rows or y >= cols:
+            return
+        try:
+            image[x + overlay_x - int(w//2)][y + overlay_y - int(h//2)] = (0, 225, 55)
+        except:
+            pass
             
-    return image
+    v = np.vectorize(graphic_blending)
+    return v(indices[0], indices[1])
 
 def bbox2points(bbox):
     """    From bounding box yolo format    to corner points cv2 rectangle    """
