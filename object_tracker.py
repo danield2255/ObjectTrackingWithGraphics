@@ -62,7 +62,10 @@ def imageOverlay(image, overlay, pos, angle, scale=1):
         if x >= rows or y >= cols:
             return
         try:
-            image[x + overlay_x - int(w//2)][y + overlay_y - int(h//2)] = (0, 225, 55)
+            x_val = x +overlay_x - int(w//2)
+            y_val = y + overlay_y - int(h//2)
+            if (x_val > 0)  and (y_val > 0): 
+                image[x_val][y_val] = (0, 225, 55)
         except:
             pass
             
@@ -136,7 +139,7 @@ def main(_argv):
 
 
     #SET THE BUFFER OF POINTS
-    buffer = 32
+    buffer = 16
     #pts = deque(maxlen=buffer)
     counter = 0
     (dX, dY) = (0, 0)
@@ -355,7 +358,8 @@ def main(_argv):
                 angle = math.degrees(math.atan(tracked_centers[track.track_id]['dY'] / 0.001))
             if np.sign(tracked_centers[track.track_id]['dX']) == 1:
                 angle = angle + 180
-            imageOverlay(frame, arrow, center, angle)
+            if np.abs(tracked_centers[track.track_id]['dX']) > 20 or np.abs(tracked_centers[track.track_id]['dY']) > 20:
+                imageOverlay(frame, arrow, center, angle)
             #THIS WAS PRINTING THE GENERAL DIRECTION
             #cv2.putText(frame, "id: {}, dir:{}".format(track.track_id, tracked_centers[track.track_id]['direction']), (10, 30* cur_view_objs), cv2.FONT_HERSHEY_SIMPLEX,
             #    0.65, (0, 0, 255), 3)
